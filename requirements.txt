@@ -1,6 +1,9 @@
 pandas
 numpy
+scipy
 matplotlib
-jupyter
 scikit-learn
 lightgbm
+shap
+yfinance
+jupyter

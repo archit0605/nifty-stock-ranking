@@ -215,3 +215,92 @@ def walk_forward_predict(df, fit_predict_function, feature_cols, param_grid=None
     all_predictions = pd.concat(all_predictions).reset_index(drop=True)
     step_log = pd.DataFrame(step_rows)
     return all_predictions, step_log
+
+
+# ---------- shared data setup (used by notebooks 06 and 07) ----------
+
+# the momentum features are multiplied by these stock features and by these market-state variables
+MOMENTUM_COLS = ["mom_1m_n", "mom_6_1_n", "mom_12_1_n"]
+STOCK_PARTNER_COLS = ["retvol_63d_n", "amihud_21d_n", "abn_turnover_n"]
+STATE_PARTNER_COLS = ["mkt_vol_63d_z", "mkt_ret_12m_z", "xs_dispersion_z"]
+
+
+def prepare_model_data(model_table, keep_splits, labelled_only):
+    # keep only the wanted splits (the warm-up rows are never kept unless asked for)
+    keep_rows = model_table["split"].isin(keep_splits)
+    if labelled_only:
+        keep_rows = keep_rows & model_table["has_label_1m"]
+
+    df = model_table[keep_rows].copy()
+    df = df.sort_values(["Date", "Ticker"]).reset_index(drop=True)
+
+    # target = centered rank, the evaluation label stays fwd_1m
+    df["y"] = df["fwd_1m_rank"] - 0.5
+
+    # the 17 stock features and the state z-scores
+    feature_cols = []
+    state_z_cols = []
+    for name in df.columns:
+        if name.endswith("_n") or name.endswith("_secrel"):
+            feature_cols.append(name)
+        if name.endswith("_z"):
+            state_z_cols.append(name)
+
+    # state z-scores are nan early on (they need 12 months of history), 0 = neutral
+    df[state_z_cols] = df[state_z_cols].fillna(0)
+
+    return df, feature_cols, state_z_cols
+
+
+def add_standard_interactions(df):
+    # feature x feature and feature x state products used by M5, M6 and M7
+    df, feature_x_feature_cols = add_interaction_columns(df, MOMENTUM_COLS, STOCK_PARTNER_COLS)
+    df, feature_x_state_cols = add_interaction_columns(df, MOMENTUM_COLS, STATE_PARTNER_COLS)
+    return df, feature_x_feature_cols, feature_x_state_cols
+
+
+def build_model_registry(feature_cols, feature_x_feature_cols, feature_x_state_cols):
+    # trees get the 17 features + 3 raw state columns and can find interactions themselves
+    tree_cols = feature_cols + STATE_PARTNER_COLS
+
+    # order here = simplicity order (M0 simplest, M9 most complex)
+    model_registry = {
+        "M0": {"label": "best single feature (mom_1m_n, sign from train ic)", "short": "single",
+               "function": m0_fit_predict, "features": ["mom_1m_n"], "grid_options": None, "default": None},
+        "M1": {"label": "equal-weight composite of 7 features with a prior", "short": "composite",
+               "function": m1_fit_predict, "features": list(COMPOSITE_PRIORS.keys()), "grid_options": None, "default": None},
+        "M2": {"label": "ols on 17 features", "short": "ols",
+               "function": ols_fit_predict, "features": feature_cols, "grid_options": None, "default": None},
+        "M3": {"label": "elastic net on 17 features", "short": "enet",
+               "function": elastic_net_fit_predict, "features": feature_cols,
+               "grid_options": ENET_GRID, "default": ENET_DEFAULT},
+        "M4": {"label": "splines + ridge (nonlinear, no interactions)", "short": "splines",
+               "function": spline_ridge_fit_predict, "features": feature_cols,
+               "grid_options": RIDGE_GRID, "default": RIDGE_DEFAULT},
+        "M5": {"label": "elastic net + feature x feature", "short": "enet+ff",
+               "function": elastic_net_fit_predict, "features": feature_cols + feature_x_feature_cols,
+               "grid_options": ENET_GRID, "default": ENET_DEFAULT},
+        "M6": {"label": "elastic net + feature x state", "short": "enet+fs",
+               "function": elastic_net_fit_predict, "features": feature_cols + feature_x_state_cols,
+               "grid_options": ENET_GRID, "default": ENET_DEFAULT},
+        "M7": {"label": "elastic net + both interaction sets", "short": "enet+both",
+               "function": elastic_net_fit_predict,
+               "features": feature_cols + feature_x_feature_cols + feature_x_state_cols,
+               "grid_options": ENET_GRID, "default": ENET_DEFAULT},
+        "M8": {"label": "random forest", "short": "rf",
+               "function": random_forest_fit_predict, "features": tree_cols,
+               "grid_options": RF_GRID, "default": RF_DEFAULT},
+        "M9": {"label": "lightgbm", "short": "lgbm",
+               "function": lightgbm_fit_predict, "features": tree_cols,
+               "grid_options": LGBM_GRID, "default": LGBM_DEFAULT},
+    }
+
+    # turn each grid dictionary into the list of all combinations
+    for name in model_registry:
+        grid_options = model_registry[name]["grid_options"]
+        if grid_options is None:
+            model_registry[name]["grid"] = None
+        else:
+            model_registry[name]["grid"] = make_param_grid(grid_options)
+
+    return model_registry
