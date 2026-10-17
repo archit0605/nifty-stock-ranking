@@ -1,0 +1,32 @@
+{
+  "chosen_model": "M1",
+  "label": "equal-weight composite of 7 features with a prior",
+  "target": "fwd_1m_rank - 0.5",
+  "feature_cols": [
+    "mom_1m_n",
+    "mom_6_1_n",
+    "mom_12_1_n",
+    "retvol_21d_n",
+    "retvol_63d_n",
+    "maxret_21d_n",
+    "idiovol_252d_n"
+  ],
+  "hyperparameter_grid": null,
+  "default_params_first_year": null,
+  "walk_forward_mean_ic_48m": 0.01685269323739939,
+  "validation_2024_mean_ic": -0.020536869997098976,
+  "selection_reasoning": [
+    "rule 1: eligible models (2024 validation mean ic > 0): []",
+    "rule 4: no model beats zero on validation -> pick M1",
+    "chosen model: M1 = equal-weight composite of 7 features with a prior"
+  ],
+  "composite_priors": {
+    "mom_1m_n": -1,
+    "mom_6_1_n": 1,
+    "mom_12_1_n": 1,
+    "retvol_21d_n": -1,
+    "retvol_63d_n": -1,
+    "maxret_21d_n": -1,
+    "idiovol_252d_n": -1
+  }
+}

@@ -187,3 +187,20 @@ def evaluate_score(df, score_col, k_list=[5, 10], benchmark_ew=None, benchmark_n
         summary[prefix + "turnover"] = top_k_turnover(df, score_col, k)
 
     return summary
+
+
+def bootstrap_mean_ci(values, n_boot=2000, seed=42, ci_level=90):
+    # resample the months with replacement and look at how much the mean moves around
+    values = np.array(values.dropna())
+    random_state = np.random.RandomState(seed)
+
+    boot_means = []
+    for i in range(n_boot):
+        sample = random_state.choice(values, size=len(values), replace=True)
+        boot_means.append(sample.mean())
+
+    lower_percentile = (100 - ci_level) / 2
+    upper_percentile = 100 - lower_percentile
+    lower = np.percentile(boot_means, lower_percentile)
+    upper = np.percentile(boot_means, upper_percentile)
+    return lower, upper
