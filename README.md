@@ -1,6 +1,6 @@
 # Cross-sectional stock ranking with machine learning on a 30-stock Nifty universe
 
-A research project by Archit Panda for the Quant Team of the Finance & Economics Club (FEC), Sardar Patel Institute of Technology (SPIT), Mumbai.
+A research project by Archit Panda(me) for the Quant Team of the Finance & Economics Club (FEC), Sardar Patel Institute of Technology (SPIT), Mumbai.
 
 ## 1. Summary
 
