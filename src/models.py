@@ -146,10 +146,11 @@ def lightgbm_fit_predict(train_df, predict_df, feature_cols, params):
 
 # ---------- walk-forward ----------
 
-def tune_params(fit_predict_function, train_df, feature_cols, param_grid, default_params, year):
+def tune_params_with_count(fit_predict_function, train_df, feature_cols, param_grid, default_params, year):
+    # returns the best params, how many candidates were tried and how many of them gave constant scores
     # no grid = nothing to tune
     if param_grid is None:
-        return {}
+        return {}, 0, 0
 
     # inner validation year = the last year before `year`, inner train = everything before that
     inner_val_start = pd.Timestamp(str(year - 1) + "-01-01")
@@ -158,25 +159,39 @@ def tune_params(fit_predict_function, train_df, feature_cols, param_grid, defaul
 
     # the very first step has only one year of history, so there is nothing to tune on
     if len(inner_train_df) == 0:
-        return default_params
+        return default_params, 0, 0
 
     assert inner_train_df["Date"].max() < inner_val_df["Date"].min(), "inner train overlaps inner validation"
 
     best_ic = -np.inf
     best_params = None
+    n_constant = 0
     for params in param_grid:
         scores = fit_predict_function(inner_train_df, inner_val_df, feature_cols, params)
         scored = inner_val_df[["Date", "Ticker", "fwd_1m"]].copy()
         scored["score"] = scores
         mean_ic = rank_ic_by_date(scored, "score").mean()
+
+        # constant scores in every inner-validation month give an undefined ic, skip this candidate
+        if np.isnan(mean_ic):
+            n_constant = n_constant + 1
+            continue
+
         if mean_ic > best_ic:
             best_ic = mean_ic
             best_params = params
 
     # if every setting gave a constant score (undefined ic), fall back to the default
     if best_params is None:
-        return default_params
+        return default_params, len(param_grid), n_constant
 
+    return best_params, len(param_grid), n_constant
+
+
+def tune_params(fit_predict_function, train_df, feature_cols, param_grid, default_params, year):
+    # same as above, but only returns the best params
+    best_params, n_tried, n_constant = tune_params_with_count(fit_predict_function, train_df, feature_cols,
+                                                              param_grid, default_params, year)
     return best_params
 
 
@@ -196,7 +211,8 @@ def walk_forward_predict(df, fit_predict_function, feature_cols, param_grid=None
         # no lookahead: training data must end before the first prediction date
         assert train_df["Date"].max() < predict_df["Date"].min(), "train dates reach into the prediction year"
 
-        params = tune_params(fit_predict_function, train_df, feature_cols, param_grid, default_params, year)
+        params, n_tried, n_constant = tune_params_with_count(fit_predict_function, train_df, feature_cols,
+                                                             param_grid, default_params, year)
         scores = fit_predict_function(train_df, predict_df, feature_cols, params)
 
         predictions = predict_df[["Date", "Ticker"]].copy()
@@ -210,6 +226,8 @@ def walk_forward_predict(df, fit_predict_function, feature_cols, param_grid=None
             "max_train_date": train_df["Date"].max(),
             "min_predict_date": predict_df["Date"].min(),
             "params": params,
+            "n_candidates_tried": n_tried,
+            "n_constant_candidates": n_constant,
         })
 
     all_predictions = pd.concat(all_predictions).reset_index(drop=True)

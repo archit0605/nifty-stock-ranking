@@ -13,7 +13,15 @@ def rank_ic_by_date(df, score_col, label_col="fwd_1m"):
     # one spearman correlation per date, between the score and the label of the 30 stocks
     ic_values = {}
     for date, one_month in df.groupby("Date"):
-        ic_values[date] = spearman_corr(one_month[score_col], one_month[label_col])
+        scores = one_month[score_col]
+
+        # all stocks have the same score (zero standard deviation): the correlation is undefined,
+        # so record nan without calling the correlation (it would print a divide warning)
+        if scores.max() == scores.min():
+            ic_values[date] = np.nan
+            continue
+
+        ic_values[date] = spearman_corr(scores, one_month[label_col])
 
     ic_series = pd.Series(ic_values)
     ic_series.index.name = "Date"
